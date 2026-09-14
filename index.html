@@ -20,6 +20,15 @@
     --text: #F3F4F6;
     --text-dim: #9CA3AF;
   }
+  /* ── الوضع الفاتح — نفس الألوان الرئيسية، خلفيات ونصوص فاتحة ── */
+  [data-theme="light"] {
+    --bg: #F5F6FA;
+    --surface: #FFFFFF;
+    --surface-alt: #F0F2F8;
+    --border: #E2E5EE;
+    --text: #1A1D2E;
+    --text-dim: #6B7280;
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: 'Cairo', sans-serif;
@@ -191,6 +200,11 @@
   .badge-sync-off { background: rgba(107,114,128,.12); color: #6B7280; }
   .badge-role-full { background: rgba(239,68,68,.15); color: var(--danger); }
   .badge-role-support { background: rgba(14,165,233,.15); color: #0EA5E9; }
+  /* ── حالات التذاكر — كل حالة لونها الخاص، عشان يبان التغيير فعلاً ── */
+  .badge-open { background: rgba(239,68,68,.15); color: var(--danger); }
+  .badge-in_progress { background: rgba(245,158,11,.15); color: var(--warning); }
+  .badge-resolved { background: rgba(16,185,129,.15); color: var(--success); }
+  .badge-closed { background: rgba(107,114,128,.15); color: #9CA3AF; }
   .btn-xlsx {
     background: rgba(16,185,129,.12); color: var(--success);
     border: 1px solid rgba(16,185,129,.3);
@@ -271,6 +285,7 @@
     <div>
       <span id="roleLabel"></span>
       <span class="user-email" id="userEmailLabel"></span>
+      <button class="btn btn-outline btn-sm" onclick="toggleTheme()" id="themeToggleBtn">🌙</button>
       <button class="btn btn-outline btn-sm" onclick="logout()">خروج</button>
     </div>
   </header>
@@ -426,6 +441,20 @@ let _lastAudit = [];
 // ─── Auth ────────────────────────────────────────────────────────────────
 
 let _otpEmail = '';
+
+// ── الوضع الليلي / النهاري — يتحفظ في localStorage، الافتراضي داكن ──
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const btn = document.getElementById('themeToggleBtn');
+  if (btn) btn.textContent = theme === 'light' ? '☀️' : '🌙';
+}
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+  const next = current === 'light' ? 'dark' : 'light';
+  localStorage.setItem('ordaxo_admin_theme', next);
+  applyTheme(next);
+}
+applyTheme(localStorage.getItem('ordaxo_admin_theme') || 'dark');
 
 async function sendMagicLink(isResend) {
   const email = document.getElementById('emailInput').value.trim();
@@ -603,6 +632,10 @@ const TICKET_CATEGORY_LABELS = {
   payment: '💳 الدفع', technical: '🐛 تقني', account: '👤 الحساب',
   feature_request: '💡 اقتراح', other: '❓ تانية',
 };
+const TICKET_STATUS_LABELS = {
+  open: 'مفتوحة', in_progress: 'قيد المعالجة',
+  resolved: 'اتحلت', closed: 'مقفولة',
+};
 
 async function loadCustomers(query) {
   document.getElementById('customersBody').innerHTML =
@@ -725,7 +758,7 @@ async function openCustomer(userId) {
         <div class="mini-list-item">
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <strong>${escapeHtml(t.subject)}</strong>
-            <span class="badge badge-${t.status === 'open' ? 'on_hold' : 'active'}">${t.status}</span>
+            <span class="badge badge-${t.status}">${TICKET_STATUS_LABELS[t.status] || t.status}</span>
           </div>
           <div style="margin-top:4px;">
             ${t.category ? `<span style="color:var(--text-dim);">${TICKET_CATEGORY_LABELS[t.category] || t.category}</span>` : ''}
@@ -874,7 +907,7 @@ async function loadTickets() {
     <div class="table-wrap" style="padding:16px;margin-bottom:10px;">
       <div style="display:flex;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
         <strong>${escapeHtml(t.subject)}</strong>
-        <span class="badge badge-${t.status === 'open' ? 'on_hold' : 'active'}">${t.status}</span>
+        <span class="badge badge-${t.status}">${TICKET_STATUS_LABELS[t.status] || t.status}</span>
       </div>
       <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">
         ${escapeHtml(t.business_name || t.email || '')} — ${new Date(t.created_at).toLocaleDateString('ar-EG')}
