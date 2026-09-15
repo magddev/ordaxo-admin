@@ -295,6 +295,7 @@
     <div class="tab" id="tabTickets" onclick="switchTab('tickets')">تذاكر الدعم</div>
     <div class="tab" id="tabPayments" onclick="switchTab('payments')">المدفوعات</div>
     <div class="tab" id="tabAudit" onclick="switchTab('audit')">سجل التدقيق</div>
+    <div class="tab hidden" id="tabPrices" onclick="switchTab('prices')">الأسعار</div>
   </div>
 
   <main>
@@ -383,9 +384,24 @@
         </table>
       </div>
       <p style="font-size:11px;color:var(--text-dim);margin-top:10px;">
-        ⚠️ عمود "المبلغ" هيفضل فاضي لغاية ما نضيف تسجيل السعر الفعلي من جوجل بلاي —
-        دلوقتي بيتسجل حالة العملية بس مش المبلغ. استخدم "نظرة عامة" فوق للـ MRR التقديري.
+        ⚠️ المبلغ تقريبي — بيتسجل من سعر الباقة وقت الحدث (تاب "الأسعار")،
+        مش من رد جوجل بلاي نفسه (جوجل مبترجعش المبلغ الفعلي في تنبيهات
+        الاشتراك). لو غيّرت السعر من تاب "الأسعار"، الأحداث القديمة
+        بتفضل بسعرها وقتها، والجديدة بس بتاخد السعر الجديد.
       </p>
+    </div>
+
+    <!-- تاب الأسعار -->
+    <div id="viewPrices" class="hidden">
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:14px;">
+        الأسعار دي بتتقرأ مباشرة من هنا وقت كل عملية اشتراك أو تجديد —
+        أي تعديل بيتطبّق على الأحداث الجديدة فوراً من غير ما تحتاج تنشر
+        أي كود أو تلمس Google Play Console. الأسعار هنا للتسجيل الداخلي
+        (تقارير/إحصائيات) بس — تغيير السعر هنا **مبيغيّرش** السعر الظاهر
+        فعلياً للتاجر في Google Play، ده لازم يتغيّر من هناك بشكل منفصل
+        ولازم يتحدّث هنا بعده بنفس القيمة عشان التقارير تفضل دقيقة.
+      </p>
+      <div id="pricesGrid" style="display:flex;flex-direction:column;gap:12px;max-width:420px;"></div>
     </div>
 
     <!-- تاب سجل التدقيق -->
@@ -552,6 +568,9 @@ function showDashboard() {
   document.getElementById('userEmailLabel').textContent = currentUser.email;
   document.getElementById('roleLabel').innerHTML =
     `<span class="badge badge-role-${currentAdminRole}" style="margin-left:8px;">${currentAdminRole === 'full' ? 'أدمن كامل' : 'دعم فني'}</span>`;
+  // تاب الأسعار قرار مالي — أدمن كامل بس (زي admin_update_plan_price
+  // على السيرفر بالظبط)
+  document.getElementById('tabPrices').classList.toggle('hidden', currentAdminRole !== 'full');
   loadStats();
   loadCustomers('');
 }
@@ -567,13 +586,16 @@ function switchTab(name) {
   document.getElementById('tabTickets').classList.toggle('active', name === 'tickets');
   document.getElementById('tabPayments').classList.toggle('active', name === 'payments');
   document.getElementById('tabAudit').classList.toggle('active', name === 'audit');
+  document.getElementById('tabPrices').classList.toggle('active', name === 'prices');
   document.getElementById('viewCustomers').classList.toggle('hidden', name !== 'customers');
   document.getElementById('viewTickets').classList.toggle('hidden', name !== 'tickets');
   document.getElementById('viewPayments').classList.toggle('hidden', name !== 'payments');
   document.getElementById('viewAudit').classList.toggle('hidden', name !== 'audit');
+  document.getElementById('viewPrices').classList.toggle('hidden', name !== 'prices');
   if (name === 'tickets') loadTickets();
   if (name === 'payments') loadPayments();
   if (name === 'audit') loadAuditLog();
+  if (name === 'prices') loadPrices();
 }
 
 // ─── Stats ───────────────────────────────────────────────────────────────
@@ -1087,6 +1109,54 @@ function exportAuditExcel() {
     'تفاصيل': JSON.stringify(a.details || {}),
   }));
   downloadWorkbook(rows, 'سجل التدقيق', `ordaxo-audit-${Date.now()}.xlsx`);
+}
+
+// ─── الأسعار ──────────────────────────────────────────────────────────────
+
+async function loadPrices() {
+  const grid = document.getElementById('pricesGrid');
+  grid.innerHTML = '<div class="loading">جاري التحميل...</div>';
+
+  const { data, error } = await sb.rpc('admin_get_plan_prices');
+  if (error) {
+    grid.innerHTML = `<div style="color:var(--danger);">خطأ: ${escapeHtml(error.message)}</div>`;
+    return;
+  }
+
+  grid.innerHTML = (data || []).map(p => `
+    <div class="stat-card" style="text-align:right;">
+      <div style="font-family:'Cairo';font-weight:700;margin-bottom:8px;">${PLAN_LABELS[p.plan] || p.plan}</div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="number" step="0.01" min="0.01" id="price-${p.plan}"
+          value="${p.price}" style="flex:1;">
+        <span style="color:var(--text-dim);font-size:12px;">${p.currency}</span>
+        <button class="btn btn-primary btn-sm" onclick="savePrice('${p.plan}')">حفظ</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:6px;">
+        آخر تحديث: ${p.updated_at ? new Date(p.updated_at).toLocaleString('ar-EG') : '—'}
+      </div>
+    </div>
+  `).join('');
+}
+
+async function savePrice(plan) {
+  const input = document.getElementById(`price-${plan}`);
+  const price = parseFloat(input.value);
+  if (!price || price <= 0) {
+    alert('اكتب سعر صحيح أكبر من صفر');
+    return;
+  }
+
+  const { error } = await sb.rpc('admin_update_plan_price', {
+    p_plan: plan, p_price: price,
+  });
+
+  if (error) {
+    alert('حصل خطأ: ' + error.message);
+    return;
+  }
+
+  loadPrices();
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
